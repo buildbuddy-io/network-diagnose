@@ -1,0 +1,52 @@
+# Example Kubernetes deployment for network-diagnose.
+#
+# Notes:
+#   - NET_RAW is needed for AF_PACKET capture. Drop it (and pass --no-capture)
+#     if your PodSecurity policy forbids it; the connect + TCP_INFO + IP_RECVERR
+#     path works as an unprivileged user.
+#   - hostNetwork:true puts the pod in the node's network namespace, which is
+#     usually what you want for diagnosing external connectivity — you see the
+#     real NIC, the real routing table, and real source IPs (no pod-network
+#     SNAT). Without it, traffic goes through the CNI and you're diagnosing
+#     the pod's egress path rather than the node's.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: network-diagnose
+  labels:
+    app: network-diagnose
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: network-diagnose
+  template:
+    metadata:
+      labels:
+        app: network-diagnose
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: network-diagnose
+          image: buildbuddy.bbcr.io/public/network-diagnose:v1.0
+          imagePullPolicy: Always
+          args:
+            - --target=YOUR_SUBDOMAIN_HERE.buildbuddy.io:443
+            - --interval=10s
+            - --timeout=30s
+          securityContext:
+            capabilities:
+              add: ["NET_RAW"]
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      restartPolicy: Always
